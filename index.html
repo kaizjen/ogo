@@ -1,0 +1,133 @@
+<style>
+	body {
+		font-family: sans-serif;
+	}
+	.status {
+		font-weight: bold;
+	}
+	.status[s="0"] {
+		color: lightblue
+	}
+	.status[s="1"] {
+		color: orange
+	}
+	.status[s="2"] {
+		color: yellowgreen
+	}
+	.stats {
+		font-family: monospace;
+	}
+	.time {
+		color: black;
+		font-weight: bold;
+	}
+</style>
+<div style="margin-bottom: 20px;">
+	<input type="number" id="n" placeholder="n">
+	<input type="number" id="d" placeholder="delta">
+	<input type="number" id="n1" placeholder="n1">
+	<input type="number" id="I" placeholder="interval">
+	<input type="number" id="TTL" placeholder="TTL">
+	<button onclick="send()">
+		Enqueue
+	</button>
+	<button onclick="randomize()">
+		Randomize
+	</button>
+</div>
+
+<button onclick="updateList()">
+	Update list
+</button>
+
+<button onclick="toggleAutoUpdate(this)">
+	Auto update every second
+</button>
+
+<table id="list">
+
+</table>
+
+<script>
+	const list = document.getElementById('list')
+
+	const n = document.getElementById('n')
+	const d = document.getElementById('d')
+	const n1 = document.getElementById('n1')
+	const I = document.getElementById('I')
+	const TTL = document.getElementById('TTL')
+
+	async function send() {
+		console.log("Sent:", await (await fetch(`http://localhost:3000/enqueue?n=${n.value}&d=${d.value}&n1=${n1.value}&I=${I.value}&TTL=${TTL.value}`)).text());
+	}
+
+	function rand(min, max, precision = 3) {
+		return (min + Math.random() * max).toFixed(precision)
+	}
+	function randomize() {
+		n.value = rand(3, 13, 0)
+		d.value = rand(1, 12)
+		n1.value = rand(1, 10)
+		I.value = rand(1, 3, 0)
+		TTL.value = rand(10, 20, 0)
+		send()
+	}
+
+	function toTime(date) {
+		return new Intl.DateTimeFormat('ru-RU', { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date)
+	}
+
+	function num(number, x = 3) {
+		return number.toFixed(x)
+	}
+	const int = n => num(n, 0)
+
+	async function updateList() {
+		const res = await fetch(`http://localhost:3000/list`);
+		const json = await res.json()
+
+		list.innerHTML = '';
+
+		console.log(json);
+		json.forEach(item => {
+			list.insertAdjacentHTML("beforeend", `
+				<tr>
+					<td>
+						ID ${item.ID}
+					</td>
+					<td class="status" s=${item.Status}>
+						${item.Status == 0 ? "In queue" : (item.Status == 1 ? "In progress" : "Completed")}
+					</td>
+					<td>
+						Current: <span class="stats">(iteration ${int(item.Iteration)}; a<sub>n</sub> = ${num(item.CurrentValue)})</span>
+					</td>
+					<td>
+						Start parameters: <span class="stats">(n1 = ${num(item.StartValue)}, n = ${int(item.MaxIterations)}, d = ${num(item.Delta)})</span>
+					</td>
+					<td>
+						Interval: <span class="stats">${int(item.Interval)}s</span>
+					</td>
+					<td>
+						TTL: <span class="stats">${int(item.TTL)}s</span>
+					</td>
+					<td class="times">
+						Enqueued at: <span class="time">${toTime(item.EnqueuedAt)}</span>
+						Started at: <span class="time">${toTime(item.StartedAt)}</span>
+						Completed at: <span class="time">${toTime(item.CompletedAt)}</span>
+					</td>
+				</tr>
+			`)
+		})
+	}
+
+	let autoUpdateTimeout = null;
+	function toggleAutoUpdate(btn) {
+		if (autoUpdateTimeout == null) {
+			btn.innerText = "Stop auto-update"
+			autoUpdateTimeout = setInterval(() => updateList(), 1000)
+		} else {
+			btn.innerText = "Auto update every second"
+			clearInterval(autoUpdateTimeout)
+		}
+	}
+</script>
