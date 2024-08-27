@@ -74,7 +74,8 @@
 	}
 
 	function toTime(date) {
-		return new Intl.DateTimeFormat('ru-RU', { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date)
+		if (date == 0) return "--:--:--"
+		return new Intl.DateTimeFormat('ru-RU', { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date*1000)
 	}
 
 	function num(number, x = 3) {
