@@ -42,6 +42,9 @@ type Task struct {
 	// TTL (seconds)
 	TTL int
 
+	// If it's -1, the Task is not in the queue
+	QueueNumber int
+
 	// (unix seconds)
 	EnqueuedAt int64
 	// (unix seconds)
@@ -82,6 +85,7 @@ func execute(task *Task) {
 
 	task.Status = STATUS_IN_PROGRESS
 	task.StartedAt = time.Now().Unix()
+	task.QueueNumber = -1
 
 	for i := 1; i < task.MaxIterations; i++ {
 		task.CurrentValue = task.CurrentValue + task.Delta
@@ -103,6 +107,10 @@ func execute(task *Task) {
 		if len(queue) > 0 {
 			qtask := queue[0]
 			queue = queue[1:]
+			for i := 0; i < len(queue); i++ {
+				// Shift all QueueNumbers
+				queue[i].QueueNumber = i
+			}
 			go execute(qtask)
 		}
 	}
@@ -170,13 +178,6 @@ func enqueueEndpoint(writer http.ResponseWriter, request *http.Request) {
 		Status:        STATUS_IN_QUEUE,
 		EnqueuedAt:    time.Now().Unix(),
 	}
-	bytes, err := json.Marshal(task)
-	if err != nil {
-		stringError(writer, "Whoops")
-		fmt.Printf("Error: Invalid (%v)\n", err)
-		return
-	}
-	writer.Write(bytes)
 
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -184,10 +185,18 @@ func enqueueEndpoint(writer http.ResponseWriter, request *http.Request) {
 	nextTaskID++
 	if len(currentlyExecuting) >= N {
 		queue = append(queue, &task)
+		task.QueueNumber = len(queue) - 1
 
 	} else {
 		go execute(&task)
 	}
+	bytes, err := json.Marshal(task)
+	if err != nil {
+		stringError(writer, "Whoops")
+		fmt.Printf("Error: Invalid (%v)\n", err)
+		return
+	}
+	writer.Write(bytes)
 }
 
 func listEndpoint(writer http.ResponseWriter, request *http.Request) {

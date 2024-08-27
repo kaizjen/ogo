@@ -84,8 +84,8 @@
 	const int = n => num(n, 0)
 
 	async function updateList() {
-		const res = await fetch(`http://localhost:3000/list`);
-		const json = await res.json()
+		const res = await fetch(`http://localhost:3000/list`).catch(() => list.innerHTML = '');
+		const json = await res.json().catch(() => list.innerHTML = '');
 
 		list.innerHTML = '';
 
@@ -97,7 +97,7 @@
 						ID ${item.ID}
 					</td>
 					<td class="status" s=${item.Status}>
-						${item.Status == 0 ? "In queue" : (item.Status == 1 ? "In progress" : "Completed")}
+						${item.Status == 0 ? `In queue (#${item.QueueNumber})` : (item.Status == 1 ? "In progress" : "Completed")}
 					</td>
 					<td>
 						Current: <span class="stats">(iteration ${int(item.Iteration)}; a<sub>n</sub> = ${num(item.CurrentValue)})</span>
@@ -129,6 +129,7 @@
 		} else {
 			btn.innerText = "Auto update every second"
 			clearInterval(autoUpdateTimeout)
+			autoUpdateTimeout = null
 		}
 	}
 </script>
