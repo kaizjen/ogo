@@ -38,9 +38,9 @@ type Task struct {
 	StartValue   float64
 	Iteration    int
 	// I (seconds)
-	Interval int
+	Interval float64
 	// TTL (seconds)
-	TTL int
+	TTL float64
 
 	// If it's -1, the Task is not in the queue
 	QueueNumber int
@@ -154,13 +154,13 @@ func enqueueEndpoint(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	interval, err := strconv.Atoi(request.FormValue("I"))
+	interval, err := strconv.ParseFloat(request.FormValue("I"), 64)
 	if err != nil {
 		stringError(writer, "Malformed I")
 		return
 	}
 
-	ttl, err := strconv.Atoi(request.FormValue("TTL"))
+	ttl, err := strconv.ParseFloat(request.FormValue("TTL"), 64)
 	if err != nil {
 		stringError(writer, "Malformed TTL")
 		return
