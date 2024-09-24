@@ -2,22 +2,40 @@ package lib
 
 import (
 	"encoding/json"
-	"fmt"
+	"io"
 	"net/http"
-	"strconv"
-	"time"
 )
 
 func stringError(writer http.ResponseWriter, err string) {
 	writer.WriteHeader(400)
-	writer.Write([]byte("ERROR: " + err))
+	bytes, marshalError := json.Marshal(map[string]any{
+		"success": false,
+		"error":   err,
+	})
+	if marshalError != nil {
+		panic("Marshal failed: " + marshalError.Error())
+	}
+	writer.Write(bytes)
 }
 
-func EnqueueEndpoint(writer http.ResponseWriter, request *http.Request) {
+func (self *Executor) EnqueueEndpoint(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Add("Access-Control-Allow-Origin", "*")
 	//                   ^ Used so the ./index.html works without CORS errors
 
-	amount, err := strconv.Atoi(request.FormValue("n"))
+	buffer, err := io.ReadAll(request.Body)
+	if err != nil {
+		stringError(writer, "Invalid request")
+		return
+	}
+
+	parameters := TaskParams{}
+	unmarshalErr := json.Unmarshal(buffer, &parameters)
+	if unmarshalErr != nil {
+		stringError(writer, "Malformed request")
+		return
+	}
+
+	/* amount, err := strconv.Atoi(request.FormValue("n"))
 	if err != nil {
 		stringError(writer, "Malformed n")
 		return
@@ -45,37 +63,18 @@ func EnqueueEndpoint(writer http.ResponseWriter, request *http.Request) {
 	if err != nil {
 		stringError(writer, "Malformed TTL")
 		return
-	}
+	} */
 
-	task := Task{
-		ID:            nextTaskID,
-		MaxIterations: amount,
-		Delta:         delta,
-		CurrentValue:  start,
-		StartValue:    start,
-		Iteration:     1,
-		Interval:      interval,
-		TTL:           ttl,
-		Status:        STATUS_IN_QUEUE,
-		EnqueuedAt:    time.Now().Unix(),
-	}
+	writer.Write([]byte(`{"success":true}`))
 
-	bytes, err := json.Marshal(task)
-	if err != nil {
-		stringError(writer, "Whoops")
-		fmt.Printf("Error: Invalid (%v)\n", err)
-		return
-	}
-	writer.Write(bytes)
-
-	enqueue(&task)
+	self.enqueue(&parameters)
 }
 
-func ListEndpoint(writer http.ResponseWriter, request *http.Request) {
+func (self *Executor) ListEndpoint(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Add("Access-Control-Allow-Origin", "*")
 	//                   ^ Used so the ./index.html works without CORS errors
 
-	taskList := list()
+	taskList := self.list()
 
 	bytes, err := json.Marshal(taskList)
 	if err != nil {

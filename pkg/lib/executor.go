@@ -43,54 +43,74 @@ type Task struct {
 	CompletedAt int64
 }
 
-// Locking queue, currentlyExecuting
-var mutex = sync.Mutex{}
+type Executor struct {
+	mutex              sync.Mutex
+	queue              []*Task
+	nextTaskID         int
+	currentlyExecuting map[int]*Task
+	completedMutex     sync.Mutex
+	completed          map[int]*Task
+}
 
-// Using mutexes seems way simpler than using a sync channel
-// though sync channels may be more robust/performant, idk
-
-var queue = []*Task{}
-
-//            ^ This is a pointer so that the /list endpoint would be simpler,
-//              though i have no idea what memory is allocated on the stack
-//              and what memory is allocated on the heap in go (and ideally
-//              we'd like to avoid heap allocs as much as possible)
-
-var nextTaskID = 0
-var currentlyExecuting = map[int]*Task{}
-
-// Locking completed
-var completedMutex = sync.Mutex{}
-var completed = map[int]*Task{}
+func NewExecutor() Executor {
+	return Executor{
+		mutex:              sync.Mutex{},
+		queue:              []*Task{},
+		nextTaskID:         0,
+		currentlyExecuting: map[int]*Task{},
+		completedMutex:     sync.Mutex{},
+		completed:          map[int]*Task{},
+	}
+}
 
 func floatSecondsToDuration(s float64) time.Duration {
 	return time.Duration(s*1000.0) * time.Millisecond
 }
 
-func enqueue(task *Task) {
-	fmt.Printf("enq task %v\n", task.ID)
-	mutex.Lock()
-	fmt.Printf("enq task %v - continue\n", task.ID)
-
-	nextTaskID++
-	if len(currentlyExecuting) >= N {
-		queue = append(queue, task)
-		task.QueueNumber = len(queue) - 1
-		// Annoying, but this seems to be the best way to
-		// do this without deadlocks
-		mutex.Unlock()
-
-	} else {
-		mutex.Unlock()
-		execute(task)
-	}
+type TaskParams struct {
+	N   int     `json:"n"`
+	N1  float64 `json:"n1"`
+	D   float64 `json:"d"`
+	I   float64 `json:"I"`
+	TTL float64 `json:"TTL"`
 }
 
-func execute(task *Task) {
+func (self *Executor) enqueue(params *TaskParams) *Task {
+	task := &Task{
+		MaxIterations: params.N,
+		Delta:         params.D,
+		StartValue:    params.N1,
+		Interval:      params.I,
+		TTL:           params.TTL,
+	}
+	self.mutex.Lock()
+
+	task.ID = self.nextTaskID
+	task.Status = STATUS_IN_QUEUE
+	task.EnqueuedAt = time.Now().Unix()
+	task.Iteration = 1
+	task.CurrentValue = task.StartValue
+
+	self.nextTaskID++
+	if len(self.currentlyExecuting) >= N {
+		self.queue = append(self.queue, task)
+		task.QueueNumber = len(self.queue) - 1
+		// Annoying, but this seems to be the best way to
+		// do this without deadlocks
+		self.mutex.Unlock()
+
+	} else {
+		self.mutex.Unlock()
+		self.execute(task)
+	}
+	return task
+}
+
+func (self *Executor) execute(task *Task) {
 	fmt.Printf("Executing task (id %v)\n", task.ID)
-	mutex.Lock()
-	currentlyExecuting[task.ID] = task
-	mutex.Unlock()
+	self.mutex.Lock()
+	self.currentlyExecuting[task.ID] = task
+	self.mutex.Unlock()
 
 	task.Status = STATUS_IN_PROGRESS
 	task.StartedAt = time.Now().Unix()
@@ -105,70 +125,68 @@ func execute(task *Task) {
 	// will be sent anyway.
 	go func() {
 		for ; task.Iteration < task.MaxIterations; task.Iteration++ {
-			// if task.Iteration != task.MaxIterations {
 			time.Sleep(floatSecondsToDuration(task.Interval))
-			// }
 			task.CurrentValue = task.CurrentValue + task.Delta
 		}
 
-		mutex.Lock()
+		self.mutex.Lock()
 
 		fmt.Printf("Task done! (id %v)\n", task.ID)
-		delete(currentlyExecuting, task.ID)
-		ttl(task)
+		delete(self.currentlyExecuting, task.ID)
+		self.ttl(task)
 
-		if len(currentlyExecuting) < N {
-			if len(queue) > 0 {
-				qtask := queue[0]
-				queue = queue[1:]
-				for i := 0; i < len(queue); i++ {
+		if len(self.currentlyExecuting) < N {
+			if len(self.queue) > 0 {
+				qtask := self.queue[0]
+				self.queue = self.queue[1:]
+				for i := 0; i < len(self.queue); i++ {
 					// Shift all QueueNumbers
-					queue[i].QueueNumber = i
+					self.queue[i].QueueNumber = i
 				}
-				mutex.Unlock()
-				execute(qtask)
+				self.mutex.Unlock()
+				self.execute(qtask)
 			} else {
-				mutex.Unlock()
+				self.mutex.Unlock()
 			}
 		} else {
-			mutex.Unlock()
+			self.mutex.Unlock()
 		}
 	}()
 }
 
-func ttl(task *Task) {
+func (self *Executor) ttl(task *Task) {
 	task.Status = STATUS_COMPLETED
 	task.CompletedAt = time.Now().Unix()
 
-	completedMutex.Lock()
-	completed[task.ID] = task
-	completedMutex.Unlock()
+	self.completedMutex.Lock()
+	self.completed[task.ID] = task
+	self.completedMutex.Unlock()
 
 	go func() {
 		time.Sleep(floatSecondsToDuration(task.TTL))
 
-		completedMutex.Lock()
+		self.completedMutex.Lock()
 		fmt.Printf("Task expired! (id %v)\n", task.ID)
-		delete(completed, task.ID)
-		completedMutex.Unlock()
+		delete(self.completed, task.ID)
+		self.completedMutex.Unlock()
 	}()
 }
 
-func list() []*Task {
-	list := make([]*Task, 0, len(completed)+len(currentlyExecuting)+len(queue))
+func (self *Executor) list() []*Task {
+	list := make([]*Task, 0, len(self.completed)+len(self.currentlyExecuting)+len(self.queue))
 
-	completedMutex.Lock()
-	for _, value := range completed {
+	self.completedMutex.Lock()
+	for _, value := range self.completed {
 		list = append(list, value)
 	}
-	completedMutex.Unlock()
+	self.completedMutex.Unlock()
 
-	mutex.Lock()
-	for _, value := range currentlyExecuting {
+	self.mutex.Lock()
+	for _, value := range self.currentlyExecuting {
 		list = append(list, value)
 	}
-	list = append(list, queue...)
-	mutex.Unlock()
+	list = append(list, self.queue...)
+	self.mutex.Unlock()
 
 	slices.SortFunc(list, func(t1, t2 *Task) int {
 		if t1.Status == t2.Status {

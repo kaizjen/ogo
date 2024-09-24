@@ -30,8 +30,10 @@ func main() {
 		fmt.Printf("Use `-N <int>` to specify the maximum amount of co-running progressions. Using default value of %d\n", lib.N)
 	}
 
-	http.HandleFunc("/enqueue", lib.EnqueueEndpoint)
-	http.HandleFunc("/list", lib.ListEndpoint)
+	exec := lib.NewExecutor()
+
+	http.HandleFunc("POST /tasks", exec.EnqueueEndpoint)
+	http.HandleFunc("GET /tasks", exec.ListEndpoint)
 
 	fmt.Printf("Listening on %v\n", ADDR)
 	err := http.ListenAndServe(ADDR, nil)

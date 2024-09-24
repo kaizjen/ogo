@@ -58,7 +58,16 @@
 	const TTL = document.getElementById('TTL')
 
 	async function send() {
-		console.log("Sent:", await (await fetch(`http://localhost:3000/enqueue?n=${n.value}&d=${d.value}&n1=${n1.value}&I=${I.value}&TTL=${TTL.value}`)).text());
+		console.log("Sent:", await (await fetch(`http://localhost:3000/tasks`, {
+			method: "POST",
+			body: JSON.stringify({
+				n: Number(n.value),
+				d: Number(d.value),
+				n1: Number(n1.value),
+				I: Number(I.value),
+				TTL: Number(TTL.value)
+			})
+		})).text());
 	}
 
 	function rand(min, max, precision = 3) {
@@ -84,7 +93,7 @@
 	const int = n => num(n, 0)
 
 	async function updateList() {
-		const res = await fetch(`http://localhost:3000/list`).catch(() => list.innerHTML = '');
+		const res = await fetch(`http://localhost:3000/tasks`).catch(() => list.innerHTML = '');
 		const json = await res.json().catch(() => list.innerHTML = '');
 
 		list.innerHTML = '';
@@ -125,7 +134,7 @@
 	function toggleAutoUpdate(btn) {
 		if (autoUpdateTimeout == null) {
 			btn.innerText = "Stop auto-update"
-			autoUpdateTimeout = setInterval(() => updateList(), 1000)
+			autoUpdateTimeout = setInterval(() => updateList(), 200)
 		} else {
 			btn.innerText = "Auto update every second"
 			clearInterval(autoUpdateTimeout)
